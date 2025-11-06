@@ -1,16 +1,19 @@
 <?php
 
 require_once __DIR__ . '/../Model/User.php';
+require_once __DIR__ . '/../Model/UserStatus.php';
 
 class UserController
 {
     private User $user;
     private JwtService $jwtService;
+    private UserStatus $userStatus;
 
     public function __construct()
     {
         $this->user = new User();
         $this->jwtService = new JwtService();
+        $this->userStatus = new UserStatus();
     }
 
     public function getUser(): User
@@ -159,6 +162,7 @@ class UserController
 
             $this->user->revokeRefreshToken($id, $refreshToken);
             $this->user->deleteById($id);
+            $this->userStatus->setOffline($id);
 
             sendResponseCustom('Successfully delete user');
 
@@ -197,6 +201,8 @@ class UserController
                 $expiresIn = $_ENV['JWT_REFRESH_TTL'] ?? 604800; // or 7 days (7*24*60*60)
 
                 $this->user->storeRefreshToken($userId, $refreshToken, $expiresIn);
+                $this->user->setLastConnectedAt($userId);
+                $this->userStatus->setOnline($userId);
 
                 setcookie('refresh_token', $refreshToken, [
                     'expires' => time() + $expiresIn,
@@ -228,6 +234,7 @@ class UserController
         }
 
         $this->user->revokeRefreshToken($id, $refreshToken);
+        $this->userStatus->setOffline($id);
         sendResponseCustom('Refresh token revoked');
 
         setcookie('refresh_token', '', [
@@ -257,6 +264,8 @@ class UserController
         try {
             $payload = ['user_id' => $user['id'], 'email' => $user['email']];
             $accessToken = $this->jwtService->createToken($payload);
+            $this->user->setLastConnectedAt((int)$user['id']);
+            $this->userStatus->setOnline((int)$user['id']);
         } catch (Exception $e) {
             logWithDate('Unknown error', $e->getMessage());
             sendResponse500();
