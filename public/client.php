@@ -6,6 +6,120 @@
     <title>Client jQuery</title>
     <link rel="stylesheet" href="/assets/css/pico.min.css">
     <script src="/assets/js/jquery-3.7.1.min.js"></script>
+    <style>
+        #motus-wrapper {
+            display: none;
+            margin-top: 2rem;
+        }
+
+        #game-selector {
+            margin-top: 2rem;
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .game-card {
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            background-color: #f8fafc;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+        }
+
+        .game-card h3 {
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+        }
+
+        .game-card p {
+            margin-bottom: 0.75rem;
+        }
+
+        .game-card button[disabled] {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .game-card-status {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #475569;
+        }
+
+        #available-players-list {
+            list-style: none;
+            padding-left: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        #available-players-list li {
+            margin: 0;
+        }
+
+        #game-status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .motus-board {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .motus-row {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(2.5rem, 1fr));
+            gap: 0.4rem;
+        }
+
+        .motus-cell {
+            border-radius: 0.5rem;
+            padding: 0.85rem 0;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #e5e7eb;
+            color: #1f2933;
+        }
+
+        .motus-cell.correct {
+            background-color: #f94144;
+            color: #ffffff;
+        }
+
+        .motus-cell.present {
+            background-color: #f9c74f;
+            color: #1f2933;
+        }
+
+        .motus-cell.absent {
+            background-color: #577590;
+            color: #ffffff;
+        }
+
+        .motus-cell.empty {
+            background-color: #f1f5f9;
+            color: #94a3b8;
+        }
+
+        #guess-form {
+            display: none;
+            gap: 1rem;
+        }
+
+        #turn-countdown {
+            font-weight: 600;
+        }
+    </style>
 </head>
 <body>
 <main class="container">
@@ -74,6 +188,19 @@
         <p id="register-message"></p>
     </section>
 
+    <section id="game-selector">
+        <h2>Jeux disponibles</h2>
+        <article class="game-card" aria-labelledby="motus-card-title">
+            <h3 id="motus-card-title">Motus (multijoueur)</h3>
+            <p>
+                Affrontez un autre joueur en proposant des mots de six lettres tour à tour.
+                Les lettres bien placées s'affichent en rouge, les lettres mal placées en jaune.
+            </p>
+            <button type="button" id="open-motus-button" disabled>Accéder à Motus</button>
+            <p class="game-card-status" id="motus-card-status">Connectez-vous pour lancer une partie de Motus.</p>
+        </article>
+    </section>
+
     <section id="profile-section" style="display: none;">
         <h2>Modifier mon compte</h2>
         <form id="profile-form">
@@ -100,6 +227,36 @@
         <button id="delete-account-button" type="button">Supprimer mon compte</button>
         <p id="profile-message"></p>
     </section>
+
+    <section id="motus-wrapper">
+        <section id="lobby-section">
+            <h2>Joueurs disponibles</h2>
+            <p id="lobby-info">Sélectionnez un joueur connecté pour démarrer une partie.</p>
+            <ul id="available-players-list"></ul>
+            <p id="lobby-message"></p>
+        </section>
+
+        <section id="game-section">
+            <h2>Motus</h2>
+            <div id="game-status-bar">
+                <span id="game-opponents"></span>
+                <span id="game-turn"></span>
+                <span id="turn-countdown"></span>
+                <span id="attempts-counter"></span>
+            </div>
+            <div class="motus-board" id="game-grid"></div>
+            <form id="guess-form">
+                <fieldset>
+                    <label for="guess-word">Votre proposition (6 lettres)</label>
+                    <input type="text" id="guess-word" name="guess-word" maxlength="6" minlength="6" autocomplete="off"
+                           required>
+                </fieldset>
+                <button type="submit">Valider</button>
+                <button type="button" id="forfeit-button" class="secondary">Abandonner</button>
+            </form>
+            <p id="game-message"></p>
+        </section>
+    </section>
 </main>
 <script>
     let dataSample = {
@@ -119,7 +276,15 @@
     };
 
     var currentUserId = null;
+    var currentUserPseudo = null;
     var refreshDeferred = null;
+    var lobbyIntervalId = null;
+    var gameIntervalId = null;
+    var turnCountdownIntervalId = null;
+    var currentGameId = null;
+    var lastKnownGameState = null;
+    var GAME_POLL_INTERVAL = 3000;
+    var LOBBY_POLL_INTERVAL = 5000;
 
     function setAccessToken(token) {
         localStorage.setItem('accessToken', token);
@@ -216,6 +381,475 @@
             }
         }, onFailure);
     }
+
+    function startLobbyPolling() {
+        if (lobbyIntervalId) {
+            return;
+        }
+
+        fetchAvailablePlayers();
+        lobbyIntervalId = setInterval(fetchAvailablePlayers, LOBBY_POLL_INTERVAL);
+    }
+
+    function stopLobbyPolling() {
+        if (lobbyIntervalId) {
+            clearInterval(lobbyIntervalId);
+            lobbyIntervalId = null;
+        }
+    }
+
+    function startGamePolling() {
+        if (gameIntervalId) {
+            return;
+        }
+
+        fetchCurrentGame();
+        gameIntervalId = setInterval(fetchCurrentGame, GAME_POLL_INTERVAL);
+    }
+
+    function stopGamePolling() {
+        if (gameIntervalId) {
+            clearInterval(gameIntervalId);
+            gameIntervalId = null;
+        }
+    }
+
+    function stopTurnCountdown() {
+        if (turnCountdownIntervalId) {
+            clearInterval(turnCountdownIntervalId);
+            turnCountdownIntervalId = null;
+        }
+        $('#turn-countdown').text('');
+    }
+
+    function startTurnCountdown(turnExpiresAt, isViewerTurn) {
+        stopTurnCountdown();
+
+        if (!turnExpiresAt || !isViewerTurn) {
+            return;
+        }
+
+        function updateCountdown() {
+            var now = new Date();
+            var target = new Date(turnExpiresAt);
+            var diff = target.getTime() - now.getTime();
+
+            if (isNaN(diff) || diff <= 0) {
+                $('#turn-countdown').text('Temps écoulé');
+                stopTurnCountdown();
+                return;
+            }
+
+            var seconds = Math.ceil(diff / 1000);
+            $('#turn-countdown').text('Temps restant : ' + seconds + ' s');
+        }
+
+        updateCountdown();
+        turnCountdownIntervalId = setInterval(updateCountdown, 1000);
+    }
+
+    function fetchAvailablePlayers() {
+        if (!currentUserId) {
+            return;
+        }
+
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/game/available-players',
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    renderAvailablePlayers(response.data || []);
+                    if (response.message) {
+                        $('#lobby-message').text('');
+                    }
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            fetchAvailablePlayers();
+                        });
+                    }
+                }
+            });
+        });
+    }
+
+    function renderAvailablePlayers(players) {
+        var list = $('#available-players-list');
+        list.empty();
+
+        var canChallenge = !lastKnownGameState || lastKnownGameState.status !== 'in_progress';
+
+        if (!players.length) {
+            var message = canChallenge ? 'Aucun adversaire disponible pour le moment.' : 'La liste sera disponible à la fin de votre partie.';
+            list.append($('<li></li>').text(message));
+            return;
+        }
+
+        players.forEach(function (player) {
+            var button = $('<button type="button" class="contrast start-game-button"></button>');
+            button.text(player.pseudo || 'Joueur ' + player.id);
+            button.attr('data-user-id', player.id);
+            if (!canChallenge) {
+                button.prop('disabled', true);
+            }
+            var listItem = $('<li></li>');
+            listItem.append(button);
+            list.append(listItem);
+        });
+    }
+
+    function startGameAgainst(opponentId) {
+        if (!opponentId) {
+            return;
+        }
+
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/game',
+                method: 'POST',
+                data: {opponent_id: opponentId},
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    if (response.data) {
+                        handleGameUpdate(response.data, response.message);
+                    }
+                    $('#lobby-message').text(response.message || '');
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            startGameAgainst(opponentId);
+                        });
+                        return;
+                    }
+
+                    var message = 'Impossible de démarrer la partie.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                    $('#lobby-message').text(message);
+                }
+            });
+        });
+    }
+
+    function fetchCurrentGame() {
+        if (!currentUserId) {
+            return;
+        }
+
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/game/current',
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    handleGameUpdate(response.data, response.data ? response.message : null);
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            fetchCurrentGame();
+                        });
+                    }
+                }
+            });
+        });
+    }
+
+    function renderGameGrid(game) {
+        var board = $('#game-grid');
+        board.empty();
+
+        var totalRows = game.max_attempts || 0;
+        var wordLength = game.word_length || 6;
+        var guesses = game.guesses || [];
+
+        for (var i = 0; i < totalRows; i++) {
+            var row = $('<div class="motus-row"></div>');
+            var guess = guesses[i];
+
+            if (guess) {
+                var feedback = Array.isArray(guess.feedback) ? guess.feedback : [];
+                for (var j = 0; j < wordLength; j++) {
+                    var cellInfo = feedback[j] || {letter: '', status: 'empty'};
+                    var cell = $('<div class="motus-cell"></div>');
+                    var statusClass = cellInfo.status || 'empty';
+                    if (statusClass !== 'empty') {
+                        cell.addClass(statusClass);
+                    } else {
+                        cell.addClass('empty');
+                    }
+                    cell.text((cellInfo.letter || '').toUpperCase());
+                    row.append(cell);
+                }
+            } else {
+                for (var j = 0; j < wordLength; j++) {
+                    var emptyCell = $('<div class="motus-cell empty"></div>');
+                    emptyCell.text('');
+                    row.append(emptyCell);
+                }
+            }
+
+            board.append(row);
+        }
+    }
+
+    function setGuessFormAvailability(game) {
+        var inProgress = game.status === 'in_progress';
+        var isPlayerTurn = inProgress && game.is_viewer_turn;
+
+        if (inProgress) {
+            $('#guess-form').show();
+        } else {
+            $('#guess-form').hide();
+            $('#guess-form')[0].reset();
+        }
+
+        $('#guess-word').prop('disabled', !isPlayerTurn);
+        $('#guess-form button[type="submit"]').prop('disabled', !isPlayerTurn);
+        $('#forfeit-button').prop('disabled', !inProgress);
+
+        if (isPlayerTurn) {
+            $('#guess-word').focus();
+        }
+    }
+
+    function handleGameUpdate(game, message) {
+        if (!game) {
+            currentGameId = null;
+            lastKnownGameState = null;
+            stopTurnCountdown();
+            $('#game-section').hide();
+            $('#motus-wrapper').show();
+            $('#lobby-section').show();
+            $('#game-grid').empty();
+            $('#game-opponents').text('');
+            $('#game-turn').text('');
+            $('#attempts-counter').text('');
+            $('#game-message').text(message || 'Aucune partie en cours.');
+            $('#forfeit-button').prop('disabled', true);
+            return;
+        }
+
+        lastKnownGameState = game;
+        currentGameId = game.id;
+        $('#motus-wrapper').show();
+
+        if (game.status === 'in_progress') {
+            $('#lobby-section').hide();
+        } else {
+            $('#lobby-section').show();
+        }
+
+        $('#game-section').show();
+
+        var opponentsText = '';
+        if (game.player1 && game.player2) {
+            opponentsText = (game.player1.pseudo || 'Joueur 1') + ' vs ' + (game.player2.pseudo || 'Joueur 2');
+        }
+        $('#game-opponents').text(opponentsText);
+
+        $('#attempts-counter').text('Tentatives : ' + game.attempts_used + '/' + game.max_attempts);
+
+        var turnText = '';
+        if (game.status === 'in_progress') {
+            if (game.is_viewer_turn) {
+                turnText = 'À votre tour !';
+            } else {
+                var currentPseudo = '';
+                if (game.player_turn_id === game.player1.id) {
+                    currentPseudo = game.player1.pseudo;
+                } else if (game.player_turn_id === game.player2.id) {
+                    currentPseudo = game.player2.pseudo;
+                }
+                turnText = currentPseudo ? 'Tour de ' + currentPseudo : 'Tour de l’adversaire';
+            }
+        } else if (game.status === 'won') {
+            var winnerPseudo = '';
+            if (game.winner_id === game.player1.id) {
+                winnerPseudo = game.player1.pseudo;
+            } else if (game.winner_id === game.player2.id) {
+                winnerPseudo = game.player2.pseudo;
+            }
+            turnText = winnerPseudo ? ('Victoire de ' + winnerPseudo + ' !') : 'Partie remportée.';
+        } else if (game.status === 'draw') {
+            turnText = 'Aucun gagnant : le nombre maximal de tentatives a été atteint.';
+        } else if (game.status === 'forfeit') {
+            var winner = '';
+            if (game.winner_id === game.player1.id) {
+                winner = game.player1.pseudo;
+            } else if (game.winner_id === game.player2.id) {
+                winner = game.player2.pseudo;
+            }
+            turnText = winner ? ('Victoire de ' + winner + ' par abandon.') : 'Partie terminée par abandon.';
+        } else {
+            turnText = 'Partie terminée.';
+        }
+
+        $('#game-turn').text(turnText);
+
+        renderGameGrid(game);
+        setGuessFormAvailability(game);
+
+        if (game.status === 'in_progress') {
+            startTurnCountdown(game.turn_expires_at, game.is_viewer_turn);
+        } else {
+            stopTurnCountdown();
+        }
+
+        if (message) {
+            $('#game-message').text(message);
+        } else if (game.status !== 'in_progress') {
+            $('#game-message').text(turnText);
+        } else {
+            $('#game-message').text('');
+        }
+    }
+
+    function clearGameUI() {
+        currentGameId = null;
+        lastKnownGameState = null;
+        stopTurnCountdown();
+        $('#motus-wrapper').hide();
+        $('#lobby-section').hide();
+        $('#available-players-list').empty();
+        $('#lobby-message').text('');
+        $('#game-section').hide();
+        $('#game-grid').empty();
+        $('#game-message').text('');
+        $('#game-turn').text('');
+        $('#game-opponents').text('');
+        $('#attempts-counter').text('');
+        $('#guess-form')[0].reset();
+        $('#guess-form').hide();
+        $('#forfeit-button').prop('disabled', true);
+    }
+
+    function updateMotusAccessUI() {
+        var isAuthenticated = Boolean(currentUserId);
+        var button = $('#open-motus-button');
+        var status = $('#motus-card-status');
+
+        if (isAuthenticated) {
+            button.prop('disabled', false);
+            status.text('Cliquez sur «\u00a0Accéder à Motus\u00a0» pour rejoindre le lobby et défier un joueur connecté.');
+        } else {
+            button.prop('disabled', true);
+            status.text('Connectez-vous pour lancer une partie de Motus.');
+        }
+    }
+
+    function revealMotusSection() {
+        $('#motus-wrapper').show();
+
+        if (!lastKnownGameState) {
+            $('#lobby-section').show();
+        }
+
+        var motusOffset = $('#motus-wrapper').offset();
+        if (motusOffset) {
+            $('html, body').animate({scrollTop: motusOffset.top - 20}, 400);
+        }
+    }
+
+    function submitGuess(word) {
+        if (!currentGameId) {
+            return;
+        }
+
+        var sanitizedWord = (word || '').toUpperCase().trim();
+
+        if (sanitizedWord.length !== 6) {
+            $('#game-message').text('Votre mot doit comporter exactement six lettres.');
+            return;
+        }
+
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/game/' + currentGameId + '/guess',
+                method: 'POST',
+                data: JSON.stringify({word: sanitizedWord}),
+                contentType: 'application/json',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    $('#guess-word').val('');
+                    if (response.data) {
+                        handleGameUpdate(response.data, response.message);
+                    } else if (response.message) {
+                        $('#game-message').text(response.message);
+                    }
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            submitGuess(sanitizedWord);
+                        });
+                        return;
+                    }
+
+                    var message = 'La proposition n’a pas pu être enregistrée.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                    $('#game-message').text(message);
+                }
+            });
+        });
+    }
+
+    function forfeitGame() {
+        if (!currentGameId) {
+            return;
+        }
+
+        var confirmed = window.confirm('Voulez-vous abandonner la partie ?');
+        if (!confirmed) {
+            return;
+        }
+
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/game/' + currentGameId + '/forfeit',
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    if (response.data) {
+                        handleGameUpdate(response.data, response.message);
+                    } else if (response.message) {
+                        $('#game-message').text(response.message);
+                    }
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            forfeitGame();
+                        });
+                        return;
+                    }
+
+                    var message = 'Impossible d’abandonner la partie.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                    $('#game-message').text(message);
+                }
+            });
+        });
+    }
+
 
     function decodeAccessToken(token) {
         if (!token) {
@@ -477,6 +1111,7 @@
                 success: function (response) {
                     var user = extractUser(response.data);
                     if (user) {
+                        currentUserPseudo = user.pseudo || null;
                         fillProfileForm(user);
                         $('#profile-section').show();
                         updateProfileMessage('');
@@ -508,6 +1143,8 @@
         }
 
         currentUserId = payload.user_id;
+        currentUserPseudo = null;
+        updateMotusAccessUI()
         fetchUserProfile(currentUserId);
     }
 
@@ -518,6 +1155,12 @@
         $('#registration').hide();
         updateMessage(message);
         loadAuthenticatedUser();
+        stopLobbyPolling();
+        stopGamePolling();
+        startLobbyPolling();
+        startGamePolling();
+        $('#motus-wrapper').show();
+        updateMotusAccessUI();
     }
 
     function onAuthenticationError(message) {
@@ -526,8 +1169,13 @@
         $('#registration').show();
         updateMessage(message);
         currentUserId = null;
+        currentUserPseudo = null;
         $('#profile-section').hide();
         clearProfileForm();
+        stopLobbyPolling();
+        stopGamePolling();
+        clearGameUI();
+        updateMotusAccessUI();
     }
 
     function onDeauthentication(message) {
@@ -537,8 +1185,13 @@
         $('#registration').show();
         updateMessage(message);
         currentUserId = null;
+        currentUserPseudo = null;
         $('#profile-section').hide();
         clearProfileForm();
+        stopLobbyPolling();
+        stopGamePolling();
+        clearGameUI();
+        updateMotusAccessUI();
     }
 
     function updateMessage(message) {
@@ -745,6 +1398,32 @@
             deleteUserAccount();
         });
 
+        $('#available-players-list').on('click', '.start-game-button', function () {
+            var opponentId = parseInt($(this).attr('data-user-id'), 10);
+            if (!isNaN(opponentId)) {
+                startGameAgainst(opponentId);
+            }
+        });
+
+        $('#guess-form').on('submit', function (event) {
+            event.preventDefault();
+            var guess = $('#guess-word').val();
+            submitGuess(guess);
+        });
+
+        $('#forfeit-button').on('click', function () {
+            forfeitGame();
+        });
+
+        $('#open-motus-button').on('click', function () {
+            if ($(this).prop('disabled')) {
+                return;
+            }
+            revealMotusSection();
+        });
+
+        clearGameUI();
+        updateMotusAccessUI();
         restoreSession();
     });
 

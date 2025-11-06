@@ -66,6 +66,70 @@ CREATE TABLE IF NOT EXISTS `user` (
   UNIQUE KEY `email` (`email`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `game`
+--
+
+DROP TABLE IF EXISTS `game`;
+CREATE TABLE IF NOT EXISTS `game` (
+    `id` int NOT NULL AUTO_INCREMENT,
+    `player1_id` int NOT NULL,
+    `player2_id` int NOT NULL,
+    `secret_word` varchar(6) COLLATE utf8mb4_unicode_ci NOT NULL,
+    `status` enum('in_progress','won','draw','forfeit') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'in_progress',
+    `current_turn` int DEFAULT NULL,
+    `winner_id` int DEFAULT NULL,
+    `max_attempts` int NOT NULL DEFAULT '8',
+    `turn_duration` int NOT NULL DEFAULT '8',
+    `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `turn_started_at` datetime DEFAULT NULL,
+    `ended_at` datetime DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `game_player1_idx` (`player1_id`),
+    KEY `game_player2_idx` (`player2_id`),
+    KEY `game_winner_idx` (`winner_id`),
+    KEY `game_current_turn_idx` (`current_turn`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `game_guess`
+--
+
+DROP TABLE IF EXISTS `game_guess`;
+CREATE TABLE IF NOT EXISTS `game_guess` (
+    `id` int NOT NULL AUTO_INCREMENT,
+    `game_id` int NOT NULL,
+    `player_id` int NOT NULL,
+     `guess_word` varchar(6) COLLATE utf8mb4_unicode_ci NOT NULL,
+    `feedback` json NOT NULL,
+    `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `game_guess_game_idx` (`game_id`),
+    KEY `game_guess_player_idx` (`player_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `user_status`
+--
+
+DROP TABLE IF EXISTS `user_status`;
+CREATE TABLE IF NOT EXISTS `user_status` (
+    `user_id` int NOT NULL,
+    `is_online` tinyint(1) NOT NULL DEFAULT '0',
+    `is_in_game` tinyint(1) NOT NULL DEFAULT '0',
+    `current_game_id` int DEFAULT NULL,
+    `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`user_id`),
+    KEY `user_status_game_idx` (`current_game_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 --
 -- Déchargement des données de la table `user`
 --
@@ -86,6 +150,17 @@ INSERT INTO `user` (`id`, `first_name`, `last_name`, `pseudo`, `birth_date`, `ge
 --
 ALTER TABLE `refresh_token`
   ADD CONSTRAINT `fk_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE;
+ALTER TABLE `game`
+    ADD CONSTRAINT `game_player1_fk` FOREIGN KEY (`player1_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `game_player2_fk` FOREIGN KEY (`player2_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `game_winner_fk` FOREIGN KEY (`winner_id`) REFERENCES `user` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `game_current_turn_fk` FOREIGN KEY (`current_turn`) REFERENCES `user` (`id`) ON DELETE SET NULL;
+ALTER TABLE `game_guess`
+    ADD CONSTRAINT `game_guess_game_fk` FOREIGN KEY (`game_id`) REFERENCES `game` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `game_guess_player_fk` FOREIGN KEY (`player_id`) REFERENCES `user` (`id`) ON DELETE CASCADE;
+ALTER TABLE `user_status`
+    ADD CONSTRAINT `user_status_user_fk` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `user_status_game_fk` FOREIGN KEY (`current_game_id`) REFERENCES `game` (`id`) ON DELETE SET NULL;
 SET FOREIGN_KEY_CHECKS=1;
 COMMIT;
 

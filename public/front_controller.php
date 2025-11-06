@@ -13,11 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/../helpers/global_helper.php';
 require_once __DIR__ . '/../helpers/http_response_helper.php';
 require_once __DIR__ . '/../helpers/jwt_helper.php';
+require_once __DIR__ . '/../helpers/game_helper.php';
 require_once __DIR__ . '/../src/Security/JwtService.php';
 require_once __DIR__ . '/../src/Controller/UserController.php';
+require_once __DIR__ . '/../src/Controller/GameController.php';
 
 $userController = new UserController();
 $jwtService = new JwtService();
+$gameController = new GameController();
 
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $requestMethod = $_SERVER['REQUEST_METHOD'];
@@ -100,6 +103,53 @@ if (!str_starts_with($requestUri, '/api/')) {
                     break;
                 }
                 $userController->delete($userId, $authenticatedUserId);
+                break;
+            default:
+                sendResponse405();
+                break;
+        }
+    } elseif ($requestUri === '/api/game/available-players') {
+        switch ($requestMethod) {
+            case 'GET':
+                $gameController->listAvailablePlayers($authenticatedUserId);
+                break;
+            default:
+                sendResponse405();
+                break;
+        }
+    } elseif ($requestUri === '/api/game') {
+        switch ($requestMethod) {
+            case 'POST':
+                $gameController->create($authenticatedUserId);
+                break;
+            default:
+                sendResponse405();
+                break;
+        }
+    } elseif ($requestUri === '/api/game/current') {
+        switch ($requestMethod) {
+            case 'GET':
+                $gameController->current($authenticatedUserId);
+                break;
+            default:
+                sendResponse405();
+                break;
+        }
+    } elseif (preg_match('#^/api/game/(\\d+)/guess$#', $requestUri, $matches)) {
+        $gameId = (int)$matches[1];
+        switch ($requestMethod) {
+            case 'POST':
+                $gameController->submitGuess($gameId, $authenticatedUserId);
+                break;
+            default:
+                sendResponse405();
+                break;
+        }
+    } elseif (preg_match('#^/api/game/(\\d+)/forfeit$#', $requestUri, $matches)) {
+        $gameId = (int)$matches[1];
+        switch ($requestMethod) {
+            case 'POST':
+                $gameController->forfeit($gameId, $authenticatedUserId);
                 break;
             default:
                 sendResponse405();
