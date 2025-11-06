@@ -45,14 +45,15 @@ if (!str_starts_with($requestUri, '/api/')) {
 } elseif ($requestUri === '/api/user' && $requestMethod === 'POST') {
     $userController->create();
 } else {
+    $authenticatedUserId = null;
     $payload = authenticateRequest($jwtService);
     if (!$payload) {
         sendResponse401();
         exit(1);
     } else {
         try {
-            $userId = $payload['user_id'];
-            $user = $userController->getUser()->findById($userId);
+            $authenticatedUserId = (int) $payload['user_id'];
+            $user = $userController->getUser()->findById($authenticatedUserId);
 //            sendResponseCustom('Successfully retrieved user data');
         } catch (Exception $e) {
             sendResponse404();
@@ -62,7 +63,7 @@ if (!str_starts_with($requestUri, '/api/')) {
     if ($requestUri === '/api/logout') {
         switch ($requestMethod) {
             case 'POST':
-                $userController->deauthenticate($userId);
+                $userController->deauthenticate($authenticatedUserId);
                 break;
             default:
                 sendResponse405();
@@ -78,7 +79,7 @@ if (!str_starts_with($requestUri, '/api/')) {
                 break;
         }
     } elseif (preg_match('#^/api/user/(\d+)$#', $requestUri, $matches)) {
-        $userId = $matches[1];
+        $userId = (int) $matches[1];
         switch ($requestMethod) {
             case 'GET':
                 $userController->get($userId);
@@ -87,7 +88,11 @@ if (!str_starts_with($requestUri, '/api/')) {
                 $userController->replace($userId);
                 break;
             case 'PATCH':
-                $userController->update($userId);
+                if (!isset($authenticatedUserId) || $authenticatedUserId !== $userId) {
+                    sendResponse403();
+                    break;
+                }
+                $userController->update($userId, $authenticatedUserId);
                 break;
             case 'DELETE':
                 $userController->delete($userId);

@@ -73,9 +73,14 @@ class UserController
         }
     }
 
-    public function update($id): void
+    public function update($id, $authenticatedUserId = null): void
     {
         try {
+            if ($authenticatedUserId === null || (int) $authenticatedUserId !== (int) $id) {
+                sendResponseCustom('Vous ne pouvez pas modifier ce compte utilisateur.', null, 'Error', 403);
+                exit(1);
+            }
+
             $refreshToken = $_COOKIE['refresh_token'] ?? null;
 
             if (!$refreshToken) {
@@ -83,7 +88,9 @@ class UserController
                 exit(1);
             }
 
-            if (!$this->user->findById($id)) {
+            $existingUser = $this->user->findById($id);
+
+            if (!$existingUser) {
                 sendResponseCustom('User not found', null, 'User not found', 404);
                 exit(1);
             }
