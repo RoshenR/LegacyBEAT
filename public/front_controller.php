@@ -17,7 +17,7 @@ require_once __DIR__ . '/../src/Security/JwtService.php';
 require_once __DIR__ . '/../src/Controller/UserController.php';
 
 $userController = new UserController();
-$jwtService = new JwtService('ma_cle_secrete');
+$jwtService = new JwtService();
 
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $requestMethod = $_SERVER['REQUEST_METHOD'];
@@ -95,7 +95,11 @@ if (!str_starts_with($requestUri, '/api/')) {
                 $userController->update($userId, $authenticatedUserId);
                 break;
             case 'DELETE':
-                $userController->delete($userId);
+                if (!isset($authenticatedUserId) || $authenticatedUserId !== $userId) {
+                    sendResponse403();
+                    break;
+                }
+                $userController->delete($userId, $authenticatedUserId);
                 break;
             default:
                 sendResponse405();

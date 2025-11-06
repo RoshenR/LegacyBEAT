@@ -96,6 +96,8 @@
             </fieldset>
             <button type="submit">Mettre à jour</button>
         </form>
+        <hr>
+        <button id="delete-account-button" type="button">Supprimer mon compte</button>
         <p id="profile-message"></p>
     </section>
 </main>
@@ -117,6 +119,103 @@
     };
 
     var currentUserId = null;
+    var refreshDeferred = null;
+
+    function setAccessToken(token) {
+        localStorage.setItem('accessToken', token);
+    }
+
+    function getAccessToken() {
+        return localStorage.getItem('accessToken');
+    }
+
+    function clearAccessToken() {
+        localStorage.removeItem('accessToken');
+    }
+
+    function isAccessTokenExpired(token) {
+        var payload = decodeAccessToken(token);
+
+        if (!payload || !payload.exp) {
+            return true;
+        }
+
+        var now = Math.floor(Date.now() / 1000);
+        return payload.exp <= now;
+    }
+
+    function handleTokenRefreshFailure() {
+        clearAccessToken();
+        onDeauthentication('Votre session a expiré. Veuillez vous reconnecter.');
+    }
+
+    function requestTokenRefresh() {
+        if (!refreshDeferred) {
+            var deferred = $.Deferred();
+            refreshDeferred = deferred;
+
+            $.ajax({
+                url: 'http://localhost:8000/api/token/refresh',
+                method: 'POST',
+                success: function (response) {
+                    var accessToken = response.data && response.data.accessToken;
+                    if (accessToken) {
+                        setAccessToken(accessToken);
+                        deferred.resolve(accessToken);
+                    } else {
+                        deferred.reject();
+                    }
+                },
+                error: function (xhr) {
+                    deferred.reject(xhr);
+                },
+                complete: function () {
+                    refreshDeferred = null;
+                }
+            });
+        }
+
+        return refreshDeferred.promise();
+    }
+
+    function ensureValidAccessToken(onSuccess, onFailure) {
+        var accessToken = getAccessToken();
+
+        if (!accessToken) {
+            if (typeof onFailure === 'function') {
+                onFailure();
+            }
+            return;
+        }
+
+        if (!isAccessTokenExpired(accessToken)) {
+            if (typeof onSuccess === 'function') {
+                onSuccess(accessToken);
+            }
+            return;
+        }
+
+        requestTokenRefresh()
+            .done(function (newToken) {
+                if (typeof onSuccess === 'function') {
+                    onSuccess(newToken);
+                }
+            })
+            .fail(function (xhr) {
+                handleTokenRefreshFailure();
+                if (typeof onFailure === 'function') {
+                    onFailure(xhr);
+                }
+            });
+    }
+
+    function withValidToken(callback, onFailure) {
+        ensureValidAccessToken(function (token) {
+            if (typeof callback === 'function') {
+                callback(token);
+            }
+        }, onFailure);
+    }
 
     function decodeAccessToken(token) {
         if (!token) {
@@ -152,15 +251,14 @@
         return data;
     }
 
-
     function authenticate(email, password) {
         $.ajax({
             url: 'http://localhost:8000/api/login',
             method: 'POST',
             data: {email: email, password: password},
             success: function (response) {
-                const accessToken = response.data.accessToken;
-                localStorage.setItem('accessToken', accessToken);
+                var accessToken = response.data.accessToken;
+                setAccessToken(accessToken);
                 onAuthenticationSuccess('Authentification réussie.');
             },
             error: function () {
@@ -170,84 +268,90 @@
     }
 
     function deauthenticate() {
-        $.ajax({
-            url: 'http://localhost:8000/api/logout',
-            method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                localStorage.removeItem('accessToken');
-                onDeauthentication('Vous avez été déconnecté.');
-            },
-            error: function () {
-                updateMessage('La déconnexion a échoué.');
-            }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/logout',
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    clearAccessToken();
+                    onDeauthentication('Vous avez été déconnecté.');
+                },
+                error: function () {
+                    updateMessage('La déconnexion a échoué.');
+                }
+            });
+        }, function () {
+            updateMessage('Aucune session active.');
         });
     }
 
     function reauthenticate(callback) {
-        $.ajax({
-            url: 'http://localhost:8000/api/token/refresh',
-            method: 'POST',
-            success: function (response) {
-                const accessToken = response.data.accessToken;
-                localStorage.setItem('accessToken', accessToken);
-                // TODO Do something if needed
-                if (callback) callback(response.data.accessToken);
-            },
-            error: function () {
-                // TODO Do something if needed
-            }
-        });
+        return requestTokenRefresh()
+            .done(function (token) {
+                if (typeof callback === 'function') {
+                    callback(token);
+                }
+            })
+            .fail(function () {
+                handleTokenRefreshFailure();
+            });
     }
 
     function endpointList() {
-        $.ajax({
-            url: 'http://localhost:8000/api/user',
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                // TODO Do something if needed
-            },
-            error: function () {
-                // TODO Do something if needed
-            }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user',
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    // TODO Do something if needed
+                },
+                error: function () {
+                    // TODO Do something if needed
+                }
+            });
         });
     }
 
     function endpointGet(id) {
-        $.ajax({
-            url: 'http://localhost:8000/api/user' + '/' + id,
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                // TODO Do something if needed
-            },
-            error: function () {
-                // TODO Do something if needed
-            }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user' + '/' + id,
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    // TODO Do something if needed
+                },
+                error: function () {
+                    // TODO Do something if needed
+                }
+            });
         });
     }
 
     function endpointCreate(data) {
-        $.ajax({
-            url: 'http://localhost:8000/api/user',
-            method: 'POST',
-            data: data,
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                // TODO Do something if needed
-            },
-            error: function () {
-                // TODO Do something if needed
-            }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user',
+                method: 'POST',
+                data: data,
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    // TODO Do something if needed
+                },
+                error: function () {
+                    // TODO Do something if needed
+                }
+            });
         });
     }
 
@@ -270,20 +374,22 @@
     }
 
     function endpointUpdate(id, data) {
-        $.ajax({
-            url: 'http://localhost:8000/api/user' + '/' + id,
-            method: 'PATCH',
-            data: JSON.stringify(data),
-            contentType: 'application/json',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                // TODO Do something if needed
-            },
-            error: function () {
-                // TODO Do something if needed
-            }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user' + '/' + id,
+                method: 'PATCH',
+                data: JSON.stringify(data),
+                contentType: 'application/json',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    // TODO Do something if needed
+                },
+                error: function () {
+                    // TODO Do something if needed
+                }
+            });
         });
     }
 
@@ -292,18 +398,20 @@
     }
 
     function endpointDelete(id) {
-        $.ajax({
-            url: 'http://localhost:8000/api/user' + '/' + id,
-            method: 'DELETE',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                // TODO Do something if needed
-            },
-            error: function () {
-                // TODO Do something if needed
-            }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user' + '/' + id,
+                method: 'DELETE',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    // TODO Do something if needed
+                },
+                error: function () {
+                    // TODO Do something if needed
+                }
+            });
         });
     }
 
@@ -323,7 +431,7 @@
      *   - 2
      *   - 3
      */
-    const action = 1;
+    const action = null;
     switch (action) {
         case 1:
             authenticate("lucas.morel@example.com", "password");
@@ -359,36 +467,40 @@
     }
 
     function fetchUserProfile(userId) {
-        $.ajax({
-            url: 'http://localhost:8000/api/user/' + userId,
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                var user = extractUser(response.data);
-                if (user) {
-                    fillProfileForm(user);
-                    $('#profile-section').show();
-                    updateProfileMessage('');
-                } else {
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user/' + userId,
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    var user = extractUser(response.data);
+                    if (user) {
+                        fillProfileForm(user);
+                        $('#profile-section').show();
+                        updateProfileMessage('');
+                    } else {
+                        updateProfileMessage('Impossible de charger le profil utilisateur.');
+                    }
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            fetchUserProfile(userId);
+                        });
+                        return;
+                    }
                     updateProfileMessage('Impossible de charger le profil utilisateur.');
                 }
-            },
-            error: function (xhr) {
-                if (xhr.status === 401) {
-                    reauthenticate(function () {
-                        fetchUserProfile(userId);
-                    });
-                    return;
-                }
-                updateProfileMessage('Impossible de charger le profil utilisateur.');
-            }
+            });
+        }, function () {
+            updateProfileMessage('Impossible de charger le profil utilisateur.');
         });
     }
 
     function loadAuthenticatedUser() {
-        var token = localStorage.getItem('accessToken');
+        var token = getAccessToken();
         var payload = decodeAccessToken(token);
 
         if (!payload || !payload.user_id) {
@@ -476,35 +588,39 @@
             return;
         }
 
-        $.ajax({
-            url: 'http://localhost:8000/api/user/' + currentUserId,
-            method: 'PATCH',
-            data: JSON.stringify(data),
-            contentType: 'application/json',
-            headers: {
-                'Authorization': 'Bearer ' + localStorage.getItem('accessToken'),
-            },
-            success: function (response) {
-                var user = extractUser(response.data);
-                if (user) {
-                    fillProfileForm(user);
-                }
-                onProfileUpdateSuccess('Profil mis à jour.', user);
-            },
-            error: function (xhr) {
-                if (xhr.status === 401) {
-                    reauthenticate(function () {
-                        updateUserProfile(data);
-                    });
-                    return;
-                }
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user/' + currentUserId,
+                method: 'PATCH',
+                data: JSON.stringify(data),
+                contentType: 'application/json',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function (response) {
+                    var user = extractUser(response.data);
+                    if (user) {
+                        fillProfileForm(user);
+                    }
+                    onProfileUpdateSuccess('Profil mis à jour.', user);
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            updateUserProfile(data);
+                        });
+                        return;
+                    }
 
-                var message = 'La mise à jour du profil a échoué.';
-                if (xhr.responseJSON && xhr.responseJSON.message) {
-                    message = xhr.responseJSON.message;
+                    var message = 'La mise à jour du profil a échoué.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                    onProfileUpdateError(message);
                 }
-                onProfileUpdateError(message);
-            }
+            });
+        }, function () {
+            onProfileUpdateError('La mise à jour du profil a échoué.');
         });
     }
 
@@ -513,6 +629,62 @@
     }
 
     function onProfileUpdateError(message) {
+        updateProfileMessage(message);
+    }
+
+    function deleteUserAccount() {
+        if (!currentUserId) {
+            updateProfileMessage('Aucun utilisateur authentifié.');
+            return;
+        }
+
+        var confirmed = window.confirm('Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est définitive.');
+
+        if (!confirmed) {
+            return;
+        }
+
+        performAccountDeletion();
+    }
+
+    function performAccountDeletion() {
+        withValidToken(function (token) {
+            $.ajax({
+                url: 'http://localhost:8000/api/user/' + currentUserId,
+                method: 'DELETE',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                },
+                success: function () {
+                    onAccountDeletionSuccess('Compte supprimé.');
+                },
+                error: function (xhr) {
+                    if (xhr.status === 401) {
+                        reauthenticate(function () {
+                            performAccountDeletion();
+                        });
+                        return;
+                    }
+
+                    var message = 'La suppression du compte a échoué.';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                    onAccountDeletionError(message);
+                }
+            });
+        }, function () {
+            onAccountDeletionError('La suppression du compte a échoué.');
+        });
+    }
+
+    function onAccountDeletionSuccess(message) {
+        clearAccessToken();
+        onDeauthentication(message);
+        updateRegisterMessage('');
+    }
+
+    function onAccountDeletionError(message) {
         updateProfileMessage(message);
     }
 
@@ -569,10 +741,33 @@
             updateUserProfile(updateData);
         });
 
-        if (localStorage.getItem('accessToken')) {
-            onAuthenticationSuccess('Session restaurée.');
-        }
+        $('#delete-account-button').on('click', function () {
+            deleteUserAccount();
+        });
+
+        restoreSession();
     });
+
+    function restoreSession() {
+        var accessToken = getAccessToken();
+
+        if (!accessToken) {
+            return;
+        }
+
+        if (isAccessTokenExpired(accessToken)) {
+            requestTokenRefresh()
+                .done(function () {
+                    onAuthenticationSuccess('Session restaurée.');
+                })
+                .fail(function () {
+                    handleTokenRefreshFailure();
+                });
+            return;
+        }
+
+        onAuthenticationSuccess('Session restaurée.');
+    }
 </script>
 </body>
 </html>

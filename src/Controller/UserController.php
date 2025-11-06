@@ -135,17 +135,40 @@ class UserController
         // TODO Nothing to do
     }
 
-    public function delete($id): void
+    public function delete($id, $authenticatedUserId = null): void
     {
         try {
-            if (!$this->user->findById($id)) {
+            if ($authenticatedUserId === null || (int) $authenticatedUserId !== (int) $id) {
+                sendResponseCustom('Vous ne pouvez pas supprimer ce compte utilisateur.', null, 'Error', 403);
+                exit(1);
+            }
+
+            $refreshToken = $_COOKIE['refresh_token'] ?? null;
+
+            if (!$refreshToken) {
+                sendResponseCustom('No refresh token found', null, 'Error', 400);
+                exit(1);
+            }
+
+            $existingUser = $this->user->findById($id);
+
+            if (!$existingUser) {
                 sendResponse404();
                 exit(1);
             }
 
+            $this->user->revokeRefreshToken($id, $refreshToken);
             $this->user->deleteById($id);
 
             sendResponseCustom('Successfully delete user');
+
+            setcookie('refresh_token', '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'httponly' => true,
+                'secure' => false, // true in production (HTTPS)
+                'samesite' => 'Lax',
+            ]);
         } catch (Exception $e) {
             logWithDate('DB connection failed', $e->getMessage());
             sendResponse500();
