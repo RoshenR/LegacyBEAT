@@ -152,6 +152,7 @@
         return data;
     }
 
+
     function authenticate(email, password) {
         $.ajax({
             url: 'http://localhost:8000/api/login',
@@ -402,6 +403,7 @@
         $('#auth-form')[0].reset();
         $('#auth-form').hide();
         $('#logout-button').show();
+        $('#registration').hide();
         updateMessage(message);
         loadAuthenticatedUser();
     }
@@ -409,6 +411,7 @@
     function onAuthenticationError(message) {
         $('#auth-form').show();
         $('#logout-button').hide();
+        $('#registration').show();
         updateMessage(message);
         currentUserId = null;
         $('#profile-section').hide();
@@ -419,6 +422,7 @@
         $('#auth-form')[0].reset();
         $('#auth-form').show();
         $('#logout-button').hide();
+        $('#registration').show();
         updateMessage(message);
         currentUserId = null;
         $('#profile-section').hide();
