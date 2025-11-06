@@ -23,7 +23,7 @@ class GameController
     {
         $this->userStatus->setOnline($authenticatedUserId);
         $players = $this->userStatus->listAvailableOpponents($authenticatedUserId);
-        sendResponseCustom('Available opponents retrieved.', $players);
+        sendResponseCustom('Joueurs connectés récupérés.', $players);
     }
 
     public function create(int $authenticatedUserId): void

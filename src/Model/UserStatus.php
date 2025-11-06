@@ -83,17 +83,22 @@ class UserStatus
         try {
             throwDbNullConnection($this->conn);
 
-            $query = 'SELECT u.id, u.pseudo, u.avatar ';
+            $query = 'SELECT u.id, u.pseudo, u.avatar, us.is_in_game ';
             $query .= 'FROM user_status us ';
             $query .= 'JOIN user u ON u.id = us.user_id ';
-            $query .= 'WHERE us.is_online = 1 AND us.is_in_game = 0 AND u.id <> :user_id ';
+            $query .= 'WHERE us.is_online = 1 AND u.id <> :user_id ';
             $query .= 'ORDER BY u.pseudo ASC';
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':user_id', $excludeUserId, PDO::PARAM_INT);
             $stmt->execute();
 
-            return $stmt->fetchAll();
+            $players = $stmt->fetchAll();
+            return array_map(static function (array $player): array {
+                $player['id'] = (int)$player['id'];
+                $player['is_in_game'] = (int)$player['is_in_game'];
+                return $player;
+            }, $players);
         } catch (PDOException|Exception $e) {
             logWithDate('Query failed', $e->getMessage());
             return [];

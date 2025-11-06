@@ -58,6 +58,29 @@
             margin: 0;
         }
 
+        .player-entry {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.25rem;
+        }
+
+        .player-status {
+            display: block;
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+            color: #dc2626;
+        }
+
+        .visually-hidden {
+            position: absolute !important;
+            height: 1px;
+            width: 1px;
+            overflow: hidden;
+            clip: rect(1px, 1px, 1px, 1px);
+            white-space: nowrap;
+        }
+
         #game-status-bar {
             display: flex;
             flex-wrap: wrap;
@@ -484,7 +507,7 @@
         var canChallenge = !lastKnownGameState || lastKnownGameState.status !== 'in_progress';
 
         if (!players.length) {
-            var message = canChallenge ? 'Aucun adversaire disponible pour le moment.' : 'La liste sera disponible à la fin de votre partie.';
+            var message = canChallenge ? 'Aucun autre joueur connecté pour le moment.' : 'La liste sera disponible à la fin de votre partie.';
             list.append($('<li></li>').text(message));
             return;
         }
@@ -493,11 +516,22 @@
             var button = $('<button type="button" class="contrast start-game-button"></button>');
             button.text(player.pseudo || 'Joueur ' + player.id);
             button.attr('data-user-id', player.id);
-            if (!canChallenge) {
+            var opponentBusy = player.is_in_game === 1 || player.is_in_game === '1';
+            if (!canChallenge || opponentBusy) {
                 button.prop('disabled', true);
             }
+
+            var content = $('<div class="player-entry"></div>');
+            content.append(button);
+
+            if (opponentBusy) {
+                button.addClass('secondary');
+                content.append($('<small class="player-status busy"></small>').text('En partie'));
+                content.append($('<span class="visually-hidden"></span>').text('Joueur en partie'));
+            }
+
             var listItem = $('<li></li>');
-            listItem.append(button);
+            listItem.append(content)
             list.append(listItem);
         });
     }
