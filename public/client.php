@@ -5,148 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Client jQuery</title>
     <link rel="stylesheet" href="/assets/css/pico.min.css">
+    <link rel="stylesheet" href="/assets/css/app.css">
     <script src="/assets/js/jquery-3.7.1.min.js"></script>
-    <style>
-        #motus-wrapper {
-            display: none;
-            margin-top: 2rem;
-        }
-
-        #game-selector {
-            margin-top: 2rem;
-            display: grid;
-            gap: 1.5rem;
-        }
-
-        .game-card {
-            border: 1px solid #d1d5db;
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            background-color: #f8fafc;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-        }
-
-        .game-card h3 {
-            margin-top: 0;
-            margin-bottom: 0.5rem;
-        }
-
-        .game-card p {
-            margin-bottom: 0.75rem;
-        }
-
-        .game-card button[disabled] {
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-
-        .game-card-status {
-            margin: 0;
-            font-size: 0.95rem;
-            color: #475569;
-        }
-
-        #available-players-list {
-            list-style: none;
-            padding-left: 0;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-        }
-
-        #available-players-list li {
-            margin: 0;
-        }
-
-        .player-entry {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.25rem;
-        }
-
-        .player-status {
-            display: block;
-            font-size: 0.8rem;
-            margin-top: 0.25rem;
-            color: #dc2626;
-        }
-
-        .visually-hidden {
-            position: absolute !important;
-            height: 1px;
-            width: 1px;
-            overflow: hidden;
-            clip: rect(1px, 1px, 1px, 1px);
-            white-space: nowrap;
-        }
-
-        #game-status-bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1rem;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .motus-board {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .motus-row {
-            display: grid;
-            grid-template-columns: repeat(6, minmax(2.5rem, 1fr));
-            gap: 0.4rem;
-        }
-
-        .motus-cell {
-            border-radius: 0.5rem;
-            padding: 0.85rem 0;
-            font-weight: 600;
-            text-transform: uppercase;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: #e5e7eb;
-            color: #1f2933;
-        }
-
-        .motus-cell.correct {
-            background-color: #f94144;
-            color: #ffffff;
-        }
-
-        .motus-cell.present {
-            background-color: #f9c74f;
-            color: #1f2933;
-        }
-
-        .motus-cell.absent {
-            background-color: #577590;
-            color: #ffffff;
-        }
-
-        .motus-cell.empty {
-            background-color: #f1f5f9;
-            color: #94a3b8;
-        }
-
-        #guess-form {
-            display: none;
-            gap: 1rem;
-        }
-
-        #turn-countdown {
-            font-weight: 600;
-        }
-    </style>
 </head>
 <body>
-<main class="container">
+<header class="page-header container">
     <h1>Client jQuery</h1>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Basculer le mode d'affichage">
+        <span class="toggle-icon" aria-hidden="true">🌙</span>
+        <span class="toggle-label">Mode sombre</span>
+    </button>
+</header>
+<main class="container page-content">
 
     <section id="authentication">
         <form id="auth-form">
@@ -282,6 +152,33 @@
     </section>
 </main>
 <script>
+    const THEME_STORAGE_KEY = 'legacybeat-theme';
+    const rootElement = document.body;
+    const themeToggleButton = document.getElementById('theme-toggle');
+
+    function applyTheme(theme) {
+        const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
+        rootElement.setAttribute('data-theme', normalizedTheme);
+        localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+
+        const icon = normalizedTheme === 'dark' ? '☀️' : '🌙';
+        const label = normalizedTheme === 'dark' ? 'Mode clair' : 'Mode sombre';
+
+        themeToggleButton.querySelector('.toggle-icon').textContent = icon;
+        themeToggleButton.querySelector('.toggle-label').textContent = label;
+    }
+
+    function toggleTheme() {
+        const currentTheme = rootElement.getAttribute('data-theme');
+        applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+    }
+
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
+
+    themeToggleButton.addEventListener('click', toggleTheme);
+
     let dataSample = {
         first_name: "Adrien",
         last_name: "Girard",
@@ -647,6 +544,8 @@
             $('#guess-form').hide();
             $('#guess-form')[0].reset();
         }
+
+        $('#guess-form').toggleClass('active', inProgress);
 
         $('#guess-word').prop('disabled', !isPlayerTurn);
         $('#guess-form button[type="submit"]').prop('disabled', !isPlayerTurn);
